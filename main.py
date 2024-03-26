@@ -44,3 +44,4 @@ chain = RunnableMap({
 }) | prompt | model | StrOutputParser()
 
 response = chain.invoke({"question":"人从哪里来？"})
+print(response)
