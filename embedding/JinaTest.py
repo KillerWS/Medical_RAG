@@ -1,9 +1,14 @@
 # 文本向量化过程
 
-from langchain.embeddings import HuggingFaceBgeEmbeddings
-
+from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from docarray import DocumentArray, Document
 from transformers import AutoTokenizer, AutoModel
 import torch
+import faiss
+import numpy as np
+
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 # 假设 "../models/BAAI/bge-large-zh-v1.5" 是您的模型路径
 model_name = "../models/BAAI/bge-large-zh-v1.5"
@@ -50,21 +55,38 @@ texts = [
 ]
 
 embeddings = get_embedding(texts,tokenizer, model)
+print(type(embeddings) )
 for embedding in embeddings:
     print( + embedding)
 
+print(embeddings.size())
 query = "Langage model Google"
 
-# # 为文本列表生成嵌入向量
-# docs = DocumentArray([Document(text=text, embedding=get_embedding(text, model, tokenizer)) for text in texts])
+ 
+# 要使用 FAISS 进行搜索，您需要将 torch.Tensor 转换为 NumPy 数组，并确保数据类型为 float32。FAISS 需要使用 NumPy 数组作为输入。
+# embeddings_np = np.vstack([e.numpy() for e in embeddings]).astype('float32')
+# print(embeddings_np)
 
-# # 为查询生成嵌入向量
-# query_doc = Document(embedding=get_embedding(query, model, tokenizer))
+# # 使用 FAISS 创建索引，这里使用的是 L2 距离(即欧式距离) 和点乘(归一化的向量点即cos相似度)
+# index = faiss.IndexFlatL2(1024)  # 128 是向量的维度
 
-# # 使用向量相似度在文档数组中寻找最相似的前3个文本
-# docs.match(query_doc, limit=3)
+# 将PyTorch张量转换为NumPy数组
+embeddings_np = embeddings.numpy().astype('float32')
 
-# # 打印最相似的文本
-# for match in query_doc.matches:
-#     print(f"Score: {match.scores['cosine'].value}, Text: {match.text}")
+# 为查询文本生成嵌入向量
+query_embedding = get_embedding([query], tokenizer, model).numpy().astype('float32')
 
+# 初始化FAISS索引 - 假设embedding_dimension是你的嵌入向量维度
+embedding_dimension = embeddings_np.shape[1]
+index = faiss.IndexFlatL2(embedding_dimension)  # 使用L2距离
+
+# 将文本嵌入向量添加到索引中
+index.add(embeddings_np)
+
+# 执行搜索，查找与查询向量最相似的3个向量
+D, I = index.search(query_embedding, 3)  # D: 距离, I: 索引
+
+# 打印查询结果
+print('查询文本:', query)
+for i, idx in enumerate(I[0]):
+    print(f"Rank {i+1}: Text: '{texts[idx]}', Distance: {D[0][i]}")
